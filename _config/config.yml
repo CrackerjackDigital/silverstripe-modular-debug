@@ -1,0 +1,6 @@
+---
+Name: modular-debug-config
+---
+Injector:
+  Debugger:
+    class: Modular\Debugger
