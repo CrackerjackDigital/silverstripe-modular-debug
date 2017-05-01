@@ -48,7 +48,7 @@ trait logging_file {
 	 *
 	 */
 	public function toFile( $level, $fileName = '' ) {
-		$this->logFilePathName = static::log_target($fileName);
+		$this->logFilePathName = static::log_file_path_name($fileName);
 
 		// if truncate is specified then do so on the log file
 		if ( ( $level && Debugger::DebugTruncate ) == Debugger::DebugTruncate ) {
@@ -77,7 +77,7 @@ trait logging_file {
 	 * @return string
 	 * @throws \Modular\Exceptions\Exception
 	 */
-	public static function log_target( $useFileName = '', $usePath = '', $extension = '.log' ) {
+	public static function log_file_path_name( $useFileName = '', $usePath = '', $extension = '.log' ) {
 		$path     = $usePath ?: static::log_path();
 		$fileName = $useFileName ?: static::log_filename();
 

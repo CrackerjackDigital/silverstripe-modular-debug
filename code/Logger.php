@@ -2,8 +2,11 @@
 
 namespace Modular;
 
-use Modular\Traits\logging;
 use \Modular\Interfaces\Logger as LoggerInterface;
+use Modular\Traits\logging_email;
+use Modular\Traits\logging_file;
+use Modular\Traits\logging_screen;
+use Modular\Traits\safe_paths;
 
 /**
  * Non-static based version of SS_Log allowing multiple different loggers to be instanced.
@@ -51,7 +54,10 @@ use \Modular\Interfaces\Logger as LoggerInterface;
  * @subpackage dev
  */
 class Logger extends Object implements LoggerInterface {
-	use logging;
+	use logging_file;
+	use logging_email;
+	use logging_screen;
+	use safe_paths;
 
 	const ERR    = \Zend_Log::ERR;
 	const WARN   = \Zend_Log::WARN;
@@ -71,11 +77,8 @@ class Logger extends Object implements LoggerInterface {
 	 */
 	public static $logger_class = 'SS_ZendLog';
 
-	/**
-	 * @var object
-	 */
+	/** @var \SS_ZendLog */
 	protected $logger;
-
 
 	protected $level;
 
@@ -181,6 +184,8 @@ class Logger extends Object implements LoggerInterface {
 	 * @param string $message  Exception object or array of error context variables
 	 * @param string $priority Priority. Possible values: SS_Log::ERR, SS_Log::WARN or SS_Log::NOTICE
 	 * @param string $extras   Extra information to log in event
+	 *
+	 * @return $this
 	 */
 	public function log( $message, $priority, $extras = null ) {
 		if ( $message instanceof \Exception ) {
@@ -206,6 +211,7 @@ class Logger extends Object implements LoggerInterface {
 			$this->logger()->log( $message, $priority, $extras );
 		} catch ( \Exception $e ) {
 		}
+		return $this;
 	}
 
 }

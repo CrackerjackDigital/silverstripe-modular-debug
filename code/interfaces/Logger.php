@@ -3,12 +3,6 @@ namespace Modular\Interfaces;
 
 interface Logger {
 	/**
-	 * Return the target we are logging to, e.g. for a file then the log file name.
-	 * @return mixed
-	 */
-	public static function log_target();
-
-	/**
 	 * Return a logger instance we can log to.
 	 * @return mixed
 	 */
