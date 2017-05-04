@@ -54,11 +54,6 @@ use Modular\Traits\safe_paths;
  * @subpackage dev
  */
 class Logger extends Object implements LoggerInterface {
-	use logging_file;
-	use logging_email;
-	use logging_screen;
-	use safe_paths;
-
 	const ERR    = \Zend_Log::ERR;
 	const WARN   = \Zend_Log::WARN;
 	const NOTICE = \Zend_Log::NOTICE;

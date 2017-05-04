@@ -152,6 +152,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * @param string $source
 	 *
 	 * @return $this
+	 * @throws \Modular\Exceptions\Exception
 	 * @throws \Zend_Log_Exception
 	 */
 	protected function init( $level, $source = null ) {

@@ -51,7 +51,7 @@ trait logging_file {
 		$this->logFilePathName = static::log_file_path_name($fileName);
 
 		// if truncate is specified then do so on the log file
-		if ( ( $level && Debugger::DebugTruncate ) == Debugger::DebugTruncate ) {
+		if ( $this->testbits($level, Debugger::DebugTruncate )) {
 			if ( file_exists( $this->logFilePathName ) ) {
 				unlink( $this->logFilePathName );
 			}
