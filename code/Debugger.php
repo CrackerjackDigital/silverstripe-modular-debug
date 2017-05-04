@@ -43,6 +43,9 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	// where are messages coming from?
 	private $source;
 
+	// keep a stack of sources for e.g. enter/exit methods
+	private $sources = [];
+
 	/** @var Logger */
 	private $logger;
 
@@ -110,7 +113,6 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 			} else {
 				$this->level = $level;
 			}
-
 			return $this;
 		} else {
 			return $this->level;
@@ -125,12 +127,15 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 */
 	public function source( $source = null ) {
 		if ( func_num_args() ) {
+			array_push($this->sources, $this->source);
 			$this->source = $source;
-
 			return $this;
 		} else {
 			return $this->source;
 		}
+	}
+	public function popSource() {
+		return array_pop($this->sources);
 	}
 
 	/**
@@ -158,11 +163,8 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	protected function init( $level, $source = null ) {
 		$this->logger()->clearWriters();
 
-		$this->level( $level );
-		$this->source( $source );
-
-		// get the level arrived at
-		$level = $this->level();
+		$level = $this->level( $level )->level();
+		$this->source( $source ?: get_called_class());
 
 		if ( $this->testbits( $level, self::DebugFile ) ) {
 			$this->toFile( $level );
@@ -264,6 +266,13 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 		return $this;
 	}
 
+	/**
+	 * @param        $message
+	 * @param string $source
+	 * @param array  $tokens
+	 *
+	 * @return $this
+	 */
 	public function trace( $message, $source = '', $tokens = [] ) {
 		$this->log( $message, self::DebugTrace, $source, $tokens );
 
