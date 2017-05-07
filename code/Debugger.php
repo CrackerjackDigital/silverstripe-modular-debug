@@ -22,13 +22,15 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 
 	const DefaultSendEmailsFrom = 'servers@moveforward.co.nz';
 
+	const CurrentEnvironment = SS_ENVIRONMENT_TYPE;
+
 	private static $environment_levels = [
 		'dev'  => self::DebugEnvDev,
 		'test' => self::DebugEnvTest,
 		'live' => self::DebugEnvLive,
 	];
 
-	private static $levels = [
+	private static $level_labels = [
 		self::DebugErr    => 'ERROR ',
 		self::DebugWarn   => 'WARN  ',
 		self::DebugNotice => 'NOTICE',
@@ -55,6 +57,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	public function __construct( $level = self::LevelFromEnv, $source = '' ) {
 		parent::__construct();
 		$this->init( $level, $source );
+		$this->info( "Start of logging at " . date( 'Y-m-d h:i:s' ) );
 	}
 
 	/**
@@ -74,6 +77,39 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 				$email->sendPlain();
 			}
 		}
+	}
+
+	/**
+	 * Set levels and source and if flags indicate debugging to file screen or email initialise those aspects of debugging using defaults from config.
+	 *
+	 * @param        $level
+	 * @param string $source
+	 *
+	 * @return $this
+	 * @throws \Modular\Exceptions\Exception
+	 * @throws \Zend_Log_Exception
+	 */
+	protected function init( $level, $source = null, $clearWriters = true ) {
+		if ($clearWriters) {
+			$this->logger()->clearWriters();
+		}
+
+		$level = $this->level( $level )->level();
+		$this->source( $source ?: get_called_class() );
+
+		if ( method_exists($this, 'toFile') && $this->testbits( $level, self::DebugFile ) ) {
+			$this->toFile( $level );
+		}
+		if ( method_exists( $this, 'toScreen' ) && $this->testbits( $level, self::DebugScreen ) ) {
+			$this->toScreen( $level );
+		}
+		if ( method_exists( $this, 'toEmail' ) && $this->testbits( $level, self::DebugEmail ) ) {
+			if ( $email = static::log_email() ) {
+				static::toEmail( $email, $level );
+			}
+		}
+
+		return $this;
 	}
 
 	/**
@@ -104,11 +140,12 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	}
 
 	/**
+	 * Setup level from passed level which may be to read from the environment.
 	 * @inheritdoc
 	 */
-	public function level( $level = self::LevelFromEnv ) {
+	public function level( $level = self::LevelFromEnv) {
 		if ( func_num_args() ) {
-			if ( $level === self::LevelFromEnv ) {
+			if ( $this->testbits($level, self::LevelFromEnv )) {
 				$this->level = $this->env();
 			} else {
 				$this->level = $level;
@@ -117,6 +154,18 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 		} else {
 			return $this->level;
 		}
+	}
+
+	/**
+	 * Return the level for a given environment.
+	 *
+	 * @param string $env 'dev', 'test', 'live'
+	 *
+	 * @return $this
+	 * @fluent
+	 */
+	public function env( $env = self::CurrentEnvironment ) {
+		return $this->config()->get( 'environment_levels' )[ $env ];
 	}
 
 	/**
@@ -136,49 +185,6 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	}
 	public function popSource() {
 		return array_pop($this->sources);
-	}
-
-	/**
-	 * Return the level for a given environment.
-	 *
-	 * @param string $env 'dev', 'test', 'live'
-	 *
-	 * @return $this
-	 * @fluent
-	 */
-	public function env( $env = SS_ENVIRONMENT_TYPE ) {
-		return $this->config()->get( 'environment_levels' )[ $env ];
-	}
-
-	/**
-	 * Set levels and source and if flags indicate debugging to file screen or email initialise those aspects of debugging using defaults from config.
-	 *
-	 * @param        $level
-	 * @param string $source
-	 *
-	 * @return $this
-	 * @throws \Modular\Exceptions\Exception
-	 * @throws \Zend_Log_Exception
-	 */
-	protected function init( $level, $source = null ) {
-		$this->logger()->clearWriters();
-
-		$level = $this->level( $level )->level();
-		$this->source( $source ?: get_called_class());
-
-		if ( $this->testbits( $level, self::DebugFile ) ) {
-			$this->toFile( $level );
-		}
-		if ( $this->testbits( $level, self::DebugScreen ) ) {
-			$this->toScreen( $level );
-		}
-		if ( $this->testbits( $level, self::DebugEmail ) ) {
-			if ( $email = static::log_email() ) {
-				static::toEmail( $email, $level );
-			}
-		}
-
-		return $this;
 	}
 
 	/**
@@ -224,6 +230,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * @param array  $tokens  to replace in message
 	 *
 	 * @return $this
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public function log( $message, $facilities, $source = '', $tokens = [] ) {
 		$source = $source ?: ( $this->source() ?: get_called_class() );
