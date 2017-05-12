@@ -2,6 +2,7 @@
 
 namespace Modular;
 
+use Modular\Exceptions\Debug;
 use \Modular\Interfaces\Logger as LoggerInterface;
 use Modular\Traits\logging_email;
 use Modular\Traits\logging_file;
@@ -54,11 +55,6 @@ use Modular\Traits\safe_paths;
  * @subpackage dev
  */
 class Logger extends Object implements LoggerInterface {
-	use logging_file;
-	use logging_email;
-	use logging_screen;
-	use safe_paths;
-
 	const ERR    = \Zend_Log::ERR;
 	const WARN   = \Zend_Log::WARN;
 	const NOTICE = \Zend_Log::NOTICE;
@@ -69,13 +65,7 @@ class Logger extends Object implements LoggerInterface {
 	// default to one log file per day
 	const LogFilePrefixDateFormat = 'Ymd';
 
-	/**
-	 * Logger class to use.
-	 *
-	 * @see SS_Log::get_logger()
-	 * @var string
-	 */
-	public static $logger_class = 'SS_ZendLog';
+	const LoggingImplementation = 'SS_ZendLog';
 
 	/** @var \SS_ZendLog */
 	protected $logger;
@@ -87,7 +77,7 @@ class Logger extends Object implements LoggerInterface {
 	 * Caution: Depends on logger implementation (mainly targeted at {@link SS_LogEmailWriter}).
 	 * @see http://framework.zend.com/manual/en/zend.log.overview.html#zend.log.overview.understanding-fields
 	 */
-	protected static $log_globals = array(
+	private static $log_globals = array(
 		'_SERVER' => array(
 			'HTTP_ACCEPT',
 			'HTTP_ACCEPT_CHARSET',
@@ -114,11 +104,12 @@ class Logger extends Object implements LoggerInterface {
 	 */
 	public function logger() {
 		if ( ! $this->logger ) {
-			// Create default logger
-			$this->logger = new static::$logger_class;
+			// Create logger implementation, e.g. SS_ZendLog
+			/** @var \SS_ZendLog logger */
+			$this->logger = \Injector::inst()->create(static::LoggingImplementation);
 
-			// Add default context (shouldn't change until the actual log event happens)
-			foreach ( static::$log_globals as $globalName => $keys ) {
+			// Add default globals (shouldn't change until the actual log event happens)
+			foreach ( static::config()->get('log_globals') as $globalName => $keys ) {
 				foreach ( $keys as $key ) {
 					$val = isset( $GLOBALS[ $globalName ][ $key ] ) ? $GLOBALS[ $globalName ][ $key ] : null;
 					$this->logger->setEventItem( sprintf( '$%s[\'%s\']', $globalName, $key ), $val );
@@ -164,13 +155,23 @@ class Logger extends Object implements LoggerInterface {
 	 *                                             the given priority will be logged.  Set to "<=" if you want to track errors of *at least*
 	 *                                             the given priority.
 	 *
-	 * @throws \Zend_Log_Exception
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public function addWriter( $writer, $priority = null, $comparison = '=' ) {
-		if ( $priority ) {
-			$writer->addFilter( new \Zend_Log_Filter_Priority( $priority, $comparison ) );
+		try {
+			if ( $priority ) {
+				$writer->addFilter( new \Zend_Log_Filter_Priority( $priority, $comparison ) );
+			}
+			$this->logger()->addWriter( $writer );
+
+		} catch (\Zend_Log_Exception $e) {
+			// don't fail hard just because logging fails...
+
+			$this->debugger()->error($e->getMessage(), __METHOD__);
+
+		} catch (\Exception $e) {
+			throw new Debug($e->getMessage(), $e->getCode(), $e);
 		}
-		$this->logger()->addWriter( $writer );
 	}
 
 	/**
@@ -186,6 +187,7 @@ class Logger extends Object implements LoggerInterface {
 	 * @param string $extras   Extra information to log in event
 	 *
 	 * @return $this
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public function log( $message, $priority, $extras = null ) {
 		if ( $message instanceof \Exception ) {
@@ -210,6 +212,8 @@ class Logger extends Object implements LoggerInterface {
 		try {
 			$this->logger()->log( $message, $priority, $extras );
 		} catch ( \Exception $e ) {
+			// wrap it as actual Exception shouldn't (need to) be exposed
+			throw new Debug($e->getMessage(), $e->getCode(), $e);
 		}
 		return $this;
 	}

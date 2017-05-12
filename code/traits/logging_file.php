@@ -1,4 +1,5 @@
 <?php
+
 namespace Modular\Traits;
 
 use Modular\Application;
@@ -14,10 +15,10 @@ trait logging_file {
 	private static $log_file_prefix_date = true;
 
 	// name of log file to create if none supplied to toFile
-	private static $log_file = 'silverstripe.log';
+	private static $log_file_name = 'silverstripe.log';
 
 	// path to create log file in relative to base folder
-	private static $log_path = ASSETS_PATH;
+	private static $log_file_path = ASSETS_PATH;
 
 	// set when toFile is called.
 	private $logFilePathName;
@@ -27,7 +28,7 @@ trait logging_file {
 	 *
 	 * @return \Config_ForClass
 	 */
-	abstract public function config($forClass = null);
+	abstract public function config( $forClass = null );
 
 	/**
 	 * @return Logger
@@ -35,23 +36,21 @@ trait logging_file {
 	abstract public function logger();
 
 	/**
-	 * Log to provided file or to a generated file. Filename is relative to site root if it starts with a '/' otherwise is interpreted as relative
+	 * Log to provided file name or to a configured file name. Filename is relative to site root if it starts with a '/' otherwise is interpreted as relative
 	 * to assets folder. Checks to make sure final log file path is inside the web root.
 	 *
-	 * @param  int   $level only log above this level
+	 * @param int    $level only log to file if event is below this level
 	 * @param string $fileName
 	 *
 	 * @return $this
 	 * @throws \Modular\Exceptions\Exception
-	 * @throws \Zend_Log_Exception
-	 * @internal param string $filePathName log to this file or if not supplied generate one
 	 *
 	 */
 	public function toFile( $level, $fileName = '' ) {
-		$this->logFilePathName = static::log_file_path_name($fileName);
+		$this->logFilePathName = static::log_file_path_name( $fileName );
 
 		// if truncate is specified then do so on the log file
-		if ( ( $level && Debugger::DebugTruncate ) == Debugger::DebugTruncate ) {
+		if ( $this->testbits($level, Debugger::DebugTruncate )) {
 			if ( file_exists( $this->logFilePathName ) ) {
 				unlink( $this->logFilePathName );
 			}
@@ -63,7 +62,24 @@ trait logging_file {
 			"<="
 		);
 		$this->info( "Start of logging at " . date( 'Y-m-d h:i:s' ) );
+
 		return $this;
+	}
+
+	/**
+	 * Return line by line content of log file as a generator can be iterated over.
+	 *
+	 * @return \Generator|null
+	 */
+	public function readLog() {
+		if ( $this->logFilePathName ) {
+			if ( $fp = fopen( $this->logFilePathName, 'r' ) ) {
+				while ( ! feof( $fp ) ) {
+					yield fgets( $fp );
+				}
+				fclose( $fp );
+			}
+		}
 	}
 
 	/**
@@ -78,8 +94,8 @@ trait logging_file {
 	 * @throws \Modular\Exceptions\Exception
 	 */
 	public static function log_file_path_name( $useFileName = '', $usePath = '', $extension = '.log' ) {
-		$path     = $usePath ?: static::log_path();
-		$fileName = $useFileName ?: static::log_filename();
+		$path     = $usePath ?: static::log_file_path();
+		$fileName = $useFileName ?: static::log_file_name();
 
 		if ( $extension && ( substr( $fileName, - strlen( $extension ) ) != $extension ) ) {
 			$fileName .= $extension;
@@ -89,30 +105,14 @@ trait logging_file {
 	}
 
 	/**
-	 * Return line by line content of log file as a generator can be iterated over.
-	 *
-	 * @return \Generator|null
-	 */
-	public function readLog() {
-		if ( $this->logFilePathName ) {
-			if ($fp = fopen($this->logFilePathName, 'r')) {
-				while (!feof($fp)) {
-					yield fgets($fp);
-				}
-				fclose($fp);
-			}
-		}
-	}
-
-	/**
 	 * Return a directory to put logs in from config.log_path or figure out a safe one
 	 * in assets directory. If in assets and doesn't exist already will create it.
 	 *
 	 * @return string
 	 * @throws \Modular\Exceptions\Exception
 	 */
-	protected static function log_path() {
-		$path = static::config()->get('log_path');
+	public static function log_file_path() {
+		$path = static::config()->get( 'log_file_path' );
 		if ( ! $path ) {
 			if ( defined( 'SS_ERROR_LOG' ) ) {
 				$path = dirname( SS_ERROR_LOG );
@@ -136,24 +136,24 @@ trait logging_file {
 
 		}
 
-		return realpath($path);
+		return realpath( $path );
 	}
 
 	/**
 	 * Return a filename without a path to use for logging from the supplied class or module's.
 	 */
-	protected static function log_filename() {
-		$fileName = static::config()->get( 'log_file' );
+	public static function log_file_name() {
+		$fileName = static::config()->get( 'log_file_name' );
 
-		if ( ! $fileName) {
+		if ( ! $fileName ) {
 			if ( defined( 'SS_ERROR_LOG' ) ) {
 				$fileName = basename( SS_ERROR_LOG );
 			} else {
 				$fileName = 'silverstripe.log';
 			}
 		}
-		if (static::config()->get('log_file_prefix_date')) {
-			$fileName = date(Logger::LogFilePrefixDateFormat);
+		if ( static::config()->get( 'log_file_prefix_date' ) ) {
+			$fileName = date( Logger::LogFilePrefixDateFormat );
 		}
 
 		return $fileName;
