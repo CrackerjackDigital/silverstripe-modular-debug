@@ -21,6 +21,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	use safe_paths;
 
 	const DefaultSendEmailsFrom = 'servers@moveforward.co.nz';
+	const DefaultSendEmailsTo = 'servers@moveforward.co.nz';
 
 	private static $environment_levels = [
 		'dev'  => self::DebugEnvDev,
@@ -38,10 +39,15 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 
 	private static $send_emails_from = self::DefaultSendEmailsFrom;
 
+	private static $send_emails_to = self::DefaultSendEmailsTo;
+
 	private $safe_paths = [];
 
 	// where are messages coming from?
 	private $source;
+
+	// keep a stack of sources for e.g. enter/exit methods
+	private $sources = [];
 
 	/** @var Logger */
 	private $logger;
@@ -63,7 +69,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 
 			if ( $body = file_get_contents( $this->logFilePathName ) ) {
 				$email = new \Email(
-					$this->config()->get( 'send_emails_from' ),
+					static::send_emails_to(),
 					$this->emailLogFileTo,
 					'Debug log from: ' . \Director::protocolAndHost(),
 					$body
@@ -110,7 +116,6 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 			} else {
 				$this->level = $level;
 			}
-
 			return $this;
 		} else {
 			return $this->level;
@@ -118,19 +123,28 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	}
 
 	/**
-	 * @param null $source
+	 * Set the source which will appear in output, also pushes the source onto
+	 * a stack so can be popSource'd later.
+	 * @param string $source
 	 *
 	 * @return $this|string
-	 * @fluent-setter
 	 */
 	public function source( $source = null ) {
 		if ( func_num_args() ) {
+			array_push($this->sources, $this->source);
 			$this->source = $source;
-
 			return $this;
 		} else {
 			return $this->source;
 		}
+	}
+
+	/**
+	 * Pop back the last saved source, e.g. when exiting a method call where soource(__METHOD__) was called at the start.
+	 * @return mixed
+	 */
+	public function popSource() {
+		return array_pop($this->sources);
 	}
 
 	/**
@@ -152,16 +166,14 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * @param string $source
 	 *
 	 * @return $this
+	 * @throws \Modular\Exceptions\Exception
 	 * @throws \Zend_Log_Exception
 	 */
 	protected function init( $level, $source = null ) {
 		$this->logger()->clearWriters();
 
-		$this->level( $level );
-		$this->source( $source );
-
-		// get the level arrived at
-		$level = $this->level();
+		$level = $this->level( $level )->level();
+		$this->source( $source ?: get_called_class());
 
 		if ( $this->testbits( $level, self::DebugFile ) ) {
 			$this->toFile( $level );
@@ -221,6 +233,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * @param array  $tokens  to replace in message
 	 *
 	 * @return $this
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public function log( $message, $facilities, $source = '', $tokens = [] ) {
 		$source = $source ?: ( $this->source() ?: get_called_class() );
@@ -256,6 +269,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * @param array  $tokens  to replace in message
 	 *
 	 * @return $this
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public function info( $message, $source = '', $tokens = [] ) {
 		$this->log( $message, self::DebugInfo, $source, $tokens );
@@ -263,6 +277,14 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 		return $this;
 	}
 
+	/**
+	 * @param        $message
+	 * @param string $source
+	 * @param array  $tokens
+	 *
+	 * @return $this
+	 * @throws \Modular\Exceptions\Debug
+	 */
 	public function trace( $message, $source = '', $tokens = [] ) {
 		$this->log( $message, self::DebugTrace, $source, $tokens );
 
@@ -282,33 +304,37 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	}
 
 	public function error( $message, $source = '', $tokens = [] ) {
-		$this->log( $message, self::DebugErr, $source, $tokens );
+		if (\Director::isDev()) {
+			$this->fail($message, $source);
+		} else {
+			$this->log( $message, self::DebugErr, $source, $tokens );
+		}
 
 		return $this;
 	}
 
 	/**
-	 * @param string|int           $message
-	 * @param string               $source
-	 * @param \Exception|Exception $exception if passed will be thrown
+	 * @param        $messageOrException
+	 * @param string $source
+	 * @param array  $tokens
 	 *
 	 * @return $this
-	 * @throws \Modular\Exceptions\Exception
+	 * @throws \Exception
+	 * @throws \Modular\Exceptions\Debug
 	 */
-	public function fail( $message, $source = '', \Exception $exception = null ) {
-		if ( $exception instanceof \Exception ) {
+	public function fail( $messageOrException, $source = '', $tokens = []) {
+		if ( $messageOrException instanceof \Exception ) {
+			$message = $messageOrException->getMessage();
+
 			$this->log( $message, self::DebugErr, $source, [
-				'file'      => $exception->getFile(),
-				'line'      => $exception->getLine(),
-				'code'      => $exception->getCode(),
-				'backtrace' => $exception->getTraceAsString(),
+				'file'      => $messageOrException->getFile(),
+				'line'      => $messageOrException->getLine(),
+				'code'      => $messageOrException->getCode(),
+				'backtrace' => $messageOrException->getTraceAsString(),
 			] );
-			if ( $exception instanceof Exception ) {
-				$exception->setMessage( $message );
-			}
-			throw $exception;
+			throw $messageOrException;
 		}
-		$this->log( $message, self::DebugErr, $source );
+		$this->log( $messageOrException, self::DebugErr, $source );
 
 		return $this;
 	}
@@ -318,18 +344,24 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * or just base \Exception if null.
 	 *
 	 * @param string     $message will receive the error message
-	 * @param null       $code    will receive the error code
+	 * @param mixed      $code    will receive the error code
 	 * @param \Exception $exception
 	 *
 	 * @return callable the previous error handler
 	 */
-	public static function set_error_exception( \Exception $exception = null ) {
+	public static function set_error_exception( &$message = '', &$code = '', \Exception $exception = null ) {
 		return set_error_handler(
 			function ( $errorCode, $errorMessage ) use ( &$message, &$code, $exception ) {
 				$exceptionClass = $exception ? get_class( $exception ) : \Exception::class;
-				throw new $exceptionClass( $message, $code );
+				$message = $errorMessage;
+				$code = $errorCode;
+				throw new $exceptionClass( $message, $code, $exception ?: null );
 			}
 		);
+	}
+
+	public static function send_emails_to() {
+		return static::config()->get('send_emails_to') ?: Application::system_admin_email();
 	}
 
 	public static function log_email() {
