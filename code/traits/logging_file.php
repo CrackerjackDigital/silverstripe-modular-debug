@@ -20,6 +20,9 @@ trait logging_file {
 	// path to create log file in relative to base folder
 	private static $log_file_path = ASSETS_PATH;
 
+	/** @var array add class names to here to have logging from these classes have their own log files, named for the class */
+	private static $class_own_logs = [];
+
 	// set when toFile is called.
 	private $logFilePathName;
 
@@ -35,6 +38,8 @@ trait logging_file {
 	 */
 	abstract public function logger();
 
+	abstract public function source();
+
 	/**
 	 * Log to provided file name or to a configured file name. Filename is relative to site root if it starts with a '/' otherwise is interpreted as relative
 	 * to assets folder. Checks to make sure final log file path is inside the web root.
@@ -47,6 +52,18 @@ trait logging_file {
 	 *
 	 */
 	public function toFile( $level, $fileName = '' ) {
+		if (!$fileName && ($source = $this->source())) {
+			if ($classOwnLogs = $this->config()->get('class_own_logs') ?: []) {
+				if ( is_numeric(key($classOwnLogs)) && in_array( $source, $classOwnLogs ) ) {
+					// numeric index array, value is class name, fabricate a log file name
+					$fileName = str_replace( '\\', '', $source ) . '.log';
+				} elseif (array_key_exists( $source, $classOwnLogs)) {
+					// map, key is class name, value is file name
+					$fileName = $classOwnLogs[$source];
+				}
+
+			}
+		}
 		$this->logFilePathName = static::log_file_path_name( $fileName );
 
 		// if truncate is specified then do so on the log file

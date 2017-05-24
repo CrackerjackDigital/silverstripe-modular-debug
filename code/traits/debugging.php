@@ -14,19 +14,24 @@ trait debugging {
 	 */
 	public static function debugger($level = Debugger::LevelFromEnv, $source = '') {
 		/** @var Debugger $debugger */
-		static $debugger;
-		if ($debugger) {
+		static $debugger = [];
+
+		$source = $source ?: get_called_class();
+
+		if (isset($debugger[$source])) {
+			// we are setting values that were passed on existing debugger
 			if (func_num_args()) {
-				$debugger->level($level);
+				$debugger[$source]->level($level);
 				if (func_num_args() >= 2) {
-					$debugger->source($source);
+					$debugger[$source]->source($source);
 				}
 			}
 		} else {
+			$debugger[ $source ] = \Injector::inst()->create( 'Debugger', $level, $source );
+			static::debugger( Debugger::LevelFromEnv, 'global' );
 			// 'Debugger' is a service name set on Injector which defaults to Modular\Debugger
-			$debugger = \Injector::inst()->get('Debugger', $level, $source ?: get_called_class());
 		}
-		return $debugger;
+		return $debugger[$source];
 	}
 
 	/**
@@ -56,9 +61,26 @@ trait debugging {
 	}
 
 	/**
+	 * Return or set and return the source on the debugger, by default this will be the class owning the debugger instance.
+	 *
+	 * @param string $source if passed will be set.
+	 *
+	 * @return string
+	 */
+	public static function debug_source($source = '') {
+		if (func_num_args()) {
+			return static::debugger()->source($source);
+		} else {
+			return static::debugger()->source();
+		}
+	}
+
+	/**
 	 * @param $message
 	 * @param $level
+	 *
 	 * @return void
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public static function debug_message($message, $level) {
 		static::debugger()->log($message, $level, get_called_class());
@@ -66,7 +88,9 @@ trait debugging {
 
 	/**
 	 * @param $message
+	 *
 	 * @return void
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public static function debug_info($message) {
 		static::debugger()->info($message, get_called_class());
@@ -74,7 +98,9 @@ trait debugging {
 
 	/**
 	 * @param $message
+	 *
 	 * @return void
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public static function debug_trace($message) {
 		static::debugger()->trace($message, get_called_class());
@@ -100,7 +126,8 @@ trait debugging {
 	 * @param \Exception $exception to log message from
 	 *
 	 * @return bool
-	 * @throws Exception
+	 * @throws \Exception
+	 * @throws \Modular\Exceptions\Debug
 	 */
 	public function debug_fail(\Exception $exception) {
 		$this->debugger()->fail($exception->getMessage(), ($exception->getFile() . ':' . $exception->getLine()), $exception);
@@ -114,7 +141,7 @@ trait debugging {
 	 * @param string $source to use as the debug 'source', if not supplied then the caller function name will be used (using debug_backtrace so may be slow)
 	 * @return ScopedReference which will set the source back to original source when it is destroyed
 	 */
-	public static function debug_source($source = null) {
+	public static function debug_scope($source = null) {
 		$debugger = static::debugger();
 		$oldSource = $debugger->source();
 		$debugger->source($source ?: debug_backtrace(false, 1)[1]['function']);
