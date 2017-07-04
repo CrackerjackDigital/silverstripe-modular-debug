@@ -2,8 +2,6 @@
 namespace Modular\Traits;
 
 use Modular\Debugger;
-use Modular\Interfaces\Exception as ExceptionInterface;
-use Modular\Exceptions\Exception;
 use Modular\ScopedReference;
 
 trait debugging {
