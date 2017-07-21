@@ -78,7 +78,7 @@ trait logging_file {
 			$this->lvl( $level ),
 			"<="
 		);
-		$this->info( "Start of logging at " . date( 'Y-m-d h:i:s' ) );
+		$this->info( "Start of logging at " . date( 'Y-m-d H:i:s' ) );
 
 		return $this;
 	}

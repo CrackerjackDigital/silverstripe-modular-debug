@@ -60,7 +60,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	public function __construct( $level = self::LevelFromEnv, $source = '' ) {
 		parent::__construct();
 		$this->init( $level, $source );
-		$this->info( "Start of logging at " . date( 'Y-m-d h:i:s' ) );
+		$this->info( "Start of logging at " . date( 'Y-m-d H:i:s' ) );
 	}
 
 	/**
@@ -68,7 +68,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 */
 	public function __destruct() {
 		if ( $this->emailLogFileTo && $this->logFilePathName ) {
-			$this->info( "End of logging at " . date( 'Y-m-d h:i:s' ) );
+			$this->info( "End of logging at " . date( 'Y-m-d H:i:s' ) );
 
 			if ( $body = file_get_contents( $this->logFilePathName ) ) {
 				$email = new \Email(
@@ -211,7 +211,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 
 		return implode( "\t", [
 				date( 'Y-m-d' ),
-				date( 'h:i:s' ),
+				date( 'H:i:s' ),
 				"$severity:",
 				$source,
 				static::digest( $message, $source ),
