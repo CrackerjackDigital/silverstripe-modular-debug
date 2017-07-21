@@ -1,0 +1,9 @@
+---
+Name: modular-debug-model
+---
+Modular\Models\DebuggerEvent:
+  extensions:
+    - Modular\Fields\EventDate
+    - Modular\Fields\TextContent
+    - Modular\Fields\JSONData
+    - Modular\Fields\EventSource

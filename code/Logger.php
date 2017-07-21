@@ -3,11 +3,7 @@
 namespace Modular;
 
 use Modular\Exceptions\Debug;
-use \Modular\Interfaces\Logger as LoggerInterface;
-use Modular\Traits\logging_email;
-use Modular\Traits\logging_file;
-use Modular\Traits\logging_screen;
-use Modular\Traits\safe_paths;
+use Modular\Interfaces\Logger as LoggerInterface;
 
 /**
  * Non-static based version of SS_Log allowing multiple different loggers to be instanced.
