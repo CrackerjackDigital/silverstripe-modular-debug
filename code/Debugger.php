@@ -2,6 +2,8 @@
 
 namespace Modular;
 
+use Cookie;
+use Director;
 use Modular\Exceptions\Exception;
 use Modular\Interfaces\Debugger as DebuggerInterface;
 use Modular\Interfaces\Logger as LoggerInterface;
@@ -78,6 +80,23 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 					$body
 				);
 				$email->sendPlain();
+			}
+		}
+	}
+
+	/**
+	 * configure some things, e.g. call from _config.php
+	 *
+	 * @param string $env force a particular debugger configuration, e.g. 'dev', 'test', 'live'
+	 */
+	public static function configure($env = '') {
+		if ( $env == 'dev' || Director::isDev() ) {
+			if ( array_key_exists( 'xdebug', $_GET ) ) {
+				if ( $_GET['xdebug'] ) {
+					Cookie::set( 'XDEBUG_SESSION', 'PHPSTORM' );
+				} else {
+					Cookie::set( 'XDEBUG_SESSION', null );
+				}
 			}
 		}
 	}
