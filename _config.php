@@ -1,4 +1,4 @@
 <?php
-// put this in your app _config.php to initialise debugging helpers, not required though
-// Debugger::configure();
+// put this in your app _config.php to initialise debugging cookies, e.g. XDEBUG_SESSION
+// Debugger::cookies();
 
