@@ -101,28 +101,27 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	/**
 	 * configure debug cookie depending on config and request variables
 	 *
-	 * @param string $env force a particular debugger configuration, e.g. 'dev', 'test', 'live'
+	 * @param string       $path  to enable debugging for (request path, e.g. '/admin')
+	 * @param string       $param name of getvar to check if we should send cookie, if empty config variable will be used
+	 * @param array|string $envs  debug in these environments
 	 */
-	public static function cookies( $env = '' ) {
-		if ( ( $env == self::DebugEnvDev ) || Director::isDev() ) {
-			$cookie      = \Config::inst()->get( self::class, 'debug_cookie_name' );
+	public static function cookies( $path = '/', $param = '', $envs = [ 'dev' ] ) {
+		$envs = is_array( $envs ) ? $envs : [ $envs ];
 
-			if ($cookie) {
-				$param       = \Config::inst()->get( self::class, 'debug_request_param' );
-				$path        = \Config::inst()->get( self::class, 'debug_request_path' );
-				$requestPath = '/' . ltrim( $_SERVER['REQUEST_URI'], '/' );
+		$cookie = \Config::inst()->get( self::class, 'debug_cookie_name' );
 
-				if ( $path && ( substr( $requestPath, 0, strlen( $path ) ) == $path ) ) {
-					$value = \Config::inst()->get( self::class, 'debug_cookie_value' );
+		if ( $cookie && in_array( Director::get_environment_type(), $envs ) ) {
+			Cookie::set( $cookie, null );
 
-					if ( $cookie && $value && $param && array_key_exists( $param, $_GET ) ) {
+			$param       = $param ?: \Config::inst()->get( self::class, 'debug_request_param' );
+			$path        = '/' . ltrim( $path ?: \Config::inst()->get( self::class, 'debug_request_path' ), '/' );
+			$requestPath = '/' . ltrim( $_SERVER['REQUEST_URI'], '/' );
 
-						Cookie::set( $cookie, null );
+			if ( $path && ( substr( $requestPath, 0, strlen( $path ) ) == $path ) ) {
+				$value = \Config::inst()->get( self::class, 'debug_cookie_value' );
 
-						if ( $param ) {
-							Cookie::set( $cookie, $value );
-						}
-					}
+				if ( $cookie && $value && $param && array_key_exists( $param, $_GET ) ) {
+					Cookie::set( $cookie, $value );
 				}
 			}
 		}
