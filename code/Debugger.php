@@ -63,15 +63,16 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	// what level will we trigger at
 	private $level;
 
-	private static $debug_cookie_name;
-
-	private static $debug_cookie_value;
-
-	// name of request variable (_GET) to trigger
-	private static $debug_request_param;
-
 	// only send cookies for requests starting with this path on server
 	private static $debug_request_path;
+	// name of request variable (_GET) to trigger
+	private static $debug_request_param;
+	// value to check on request variable, if empty any truthish value will do, falsish will unset
+	private static $debug_request_value;
+	// name of cookie to set
+	private static $debug_cookie_name;
+	// cookie value to set
+	private static $debug_cookie_value;
 
 	public function __construct( $level = self::LevelFromEnv, $source = '' ) {
 		parent::__construct();
@@ -101,27 +102,32 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	/**
 	 * configure debug cookie depending on config and request variables
 	 *
-	 * @param string       $path  to enable debugging for (request path, e.g. '/admin')
-	 * @param string       $param name of getvar to check if we should send cookie, if empty config variable will be used
-	 * @param array|string $envs  debug in these environments
+	 * @param string       $matchPath to enable debugging for (request path, e.g. '/admin')
+	 * @param string       $paramName name of getvar to check if we should send cookie, if empty config variable will be used
+	 * @param array|string $envs      debug in these environments
 	 */
-	public static function cookies( $path = '/', $param = '', $envs = [ 'dev' ] ) {
+	public static function cookies( $matchPath = '/', $paramName = '', $envs = [ 'dev' ] ) {
 		$envs = is_array( $envs ) ? $envs : [ $envs ];
 
-		$cookie = \Config::inst()->get( self::class, 'debug_cookie_name' );
+		$cookieName = \Config::inst()->get( self::class, 'debug_cookie_name' );
 
-		if ( $cookie && in_array( Director::get_environment_type(), $envs ) ) {
-			Cookie::set( $cookie, null );
-
-			$param       = $param ?: \Config::inst()->get( self::class, 'debug_request_param' );
-			$path        = '/' . ltrim( $path ?: \Config::inst()->get( self::class, 'debug_request_path' ), '/' );
+		if ( $cookieName && in_array( Director::get_environment_type(), $envs ) ) {
+			$matchPath   = '/' . ltrim( $matchPath ?: \Config::inst()->get( self::class, 'debug_request_path' ), '/' );
 			$requestPath = '/' . ltrim( $_SERVER['REQUEST_URI'], '/' );
 
-			if ( $path && ( substr( $requestPath, 0, strlen( $path ) ) == $path ) ) {
-				$value = \Config::inst()->get( self::class, 'debug_cookie_value' );
+			if ( $matchPath && ( substr( $requestPath, 0, strlen( $matchPath ) ) == $matchPath ) ) {
+				$paramName   = $paramName ?: \Config::inst()->get( self::class, 'debug_request_param' );
+				$paramValue  = \Config::inst()->get( self::class, 'debug_request_value' );
+				$cookieValue = \Config::inst()->get( self::class, 'debug_cookie_value' );
 
-				if ( $cookie && $value && $param && array_key_exists( $param, $_GET ) ) {
-					Cookie::set( $cookie, $value );
+				if ( $cookieName && $cookieValue && $paramName && array_key_exists( $paramName, $_GET ) ) {
+					$requestParamValue = $_GET[ $paramName ];
+
+					if ( ( ! $paramValue && $requestParamValue ) || ( $paramValue && ($requestParamValue == $paramValue )) ) {
+						Cookie::set( $cookieName, $cookieValue, 1, $matchPath );
+					} else {
+						Cookie::set( $cookieName, null );
+					}
 				}
 			}
 		}
