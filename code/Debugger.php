@@ -12,11 +12,13 @@ use Director;
 use Modular\Interfaces\Debugger as DebuggerInterface;
 use Modular\Interfaces\Logger as LoggerInterface;
 use Modular\Traits\bitfield;
+use Modular\Traits\config;
 use Modular\Traits\enabler;
 use Modular\Traits\logging_email;
 use Modular\Traits\logging_file;
 use Modular\Traits\logging_screen;
 use Modular\Traits\safe_paths;
+use Session;
 
 class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	use bitfield;
@@ -25,6 +27,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	use logging_screen;
 	use logging_email;
 	use safe_paths;
+	use config;
 
 	const DefaultSendEmailsFrom = 'servers@moveforward.co.nz';
 	const DefaultSendEmailsTo   = 'servers@moveforward.co.nz';
@@ -102,35 +105,55 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	/**
 	 * configure debug cookie depending on config and request variables
 	 *
-	 * @param string       $matchPath to enable debugging for (request path, e.g. '/admin')
-	 * @param string       $paramName name of getvar to check if we should send cookie, if empty config variable will be used
-	 * @param array|string $envs      debug in these environments
+	 * @param string       $matchPath  to enable debugging for (request path, e.g. '/admin')
+	 * @param bool         $persistent wether to persist xdebug cookie across requests once set without needing the trigger parameter
+	 * @param string       $paramName  name of getvar to check if we should send cookie, if empty config variable will be used
+	 * @param array|string $envs       debug in these environments
 	 */
-	public static function cookies( $matchPath = '/', $paramName = '', $envs = [ 'dev' ] ) {
-		$envs = is_array( $envs ) ? $envs : [ $envs ];
+	public static function xdebug( $matchPath = '/', $persistent = true, $paramName = '', $envs = [ 'dev' ] ) {
+		if ( extension_loaded( 'xdebug' ) ) {
+			$envs = is_array( $envs ) ? $envs : [ $envs ];
 
-		$cookieName = \Config::inst()->get( self::class, 'debug_cookie_name' );
+			$config = static::config();
 
-		if ( $cookieName && in_array( Director::get_environment_type(), $envs ) ) {
-			$matchPath   = '/' . ltrim( $matchPath ?: \Config::inst()->get( self::class, 'debug_request_path' ), '/' );
-			$requestPath = '/' . ltrim( $_SERVER['REQUEST_URI'], '/' );
+			$cookieName = $config->get( 'debug_cookie_name' );
 
-			if ( $matchPath && ( substr( $requestPath, 0, strlen( $matchPath ) ) == $matchPath ) ) {
-				$paramName   = $paramName ?: \Config::inst()->get( self::class, 'debug_request_param' );
-				$paramValue  = \Config::inst()->get( self::class, 'debug_request_value' );
-				$cookieValue = \Config::inst()->get( self::class, 'debug_cookie_value' );
+			if ( $cookieName && in_array( Director::get_environment_type(), $envs ) ) {
+				$matchPath   = '/' . ltrim( $matchPath ?: $config->get( 'debug_request_path' ), '/' );
+				$requestPath = '/' . ltrim( @$_SERVER['REQUEST_URI'], '/' );
 
-				if ( $cookieName && $cookieValue && $paramName && array_key_exists( $paramName, $_GET ) ) {
-					$requestParamValue = $_GET[ $paramName ];
+				if ( static::match_path( $matchPath, $requestPath ) ) {
 
-					if ( ( ! $paramValue && $requestParamValue ) || ( $paramValue && ($requestParamValue == $paramValue )) ) {
-						Cookie::set( $cookieName, $cookieValue, 1, $matchPath );
-					} else {
-						Cookie::set( $cookieName, null );
+					$paramName         = $paramName ?: $config->get( 'debug_request_param' );
+					$requireParamValue = $config->get( 'debug_request_value' );
+					$cookieValue       = $config->get( 'debug_cookie_value' );
+
+					if ( $cookieName && $cookieValue && $paramName ) {
+						$requestParamValue = array_key_exists( $paramName, $_GET )
+							? $_GET[ $paramName ]
+							: null;
+
+						if ( ! $requireParamValue || ( $requireParamValue && $requestParamValue == $requireParamValue ) ) {
+							// no particular value required but param passed, or value required and matches request
+							Cookie::set( $cookieName, $cookieValue, 1, $matchPath );
+							if ( $persistent ) {
+								Session::set( "MODULAR_DEBUG_$cookieName", $cookieValue );
+							}
+						} elseif ( ! $persistent || ( $requestParamValue && ( $requestParamValue != $requireParamValue ) ) ) {
+							// some other request value or no request value
+							Cookie::set( $cookieName, null );
+							if ( !$persistent && !$requestParamValue) {
+								Session::set( "MODULAR_DEBUG_$cookieName", null );
+							}
+						}
 					}
 				}
 			}
 		}
+	}
+
+	public static function match_path( $pattern, $value ) {
+		return ( $pattern && ( substr( $value, 0, strlen( $pattern ) ) == $pattern ) );
 	}
 
 	/**
