@@ -4,3 +4,11 @@ Name: modular-debug-config
 Injector:
   Debugger:
     class: Modular\Debugger
+Modular\Debugger:
+  debug_request_path: '/'                    # only send cookie on requests starting with this path, '/' for all, empty for none
+  debug_request_param: 'xdebug'             # name of _GET param to test if debugging cookie should be sent or cleared
+  debug_cookie_name: 'XDEBUG_SESSION'       # name of cookie to set to enable debugging
+# put below in app config to enable setting XDEBUG_SESSION cookie to 'PHPSTORM' for all request paths on the site in dev mode
+#  debug_request_value: 1                     # value to check on getvar, if nothing then any truthish value will do
+#  debug_cookie_value: 'PHPSTORM'            # value to set for cookie
+

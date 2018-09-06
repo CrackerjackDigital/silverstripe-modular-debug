@@ -2,15 +2,23 @@
 
 namespace Modular;
 
-use Modular\Exceptions\Exception;
+require_once( __DIR__ . '/traits/debugging.php' );
+require_once( __DIR__ . '/traits/logging_email.php' );
+require_once( __DIR__ . '/traits/logging_file.php' );
+require_once( __DIR__ . '/traits/logging_screen.php' );
+
+use Cookie;
+use Director;
 use Modular\Interfaces\Debugger as DebuggerInterface;
 use Modular\Interfaces\Logger as LoggerInterface;
 use Modular\Traits\bitfield;
+use Modular\Traits\config;
 use Modular\Traits\enabler;
 use Modular\Traits\logging_email;
 use Modular\Traits\logging_file;
 use Modular\Traits\logging_screen;
 use Modular\Traits\safe_paths;
+use Session;
 
 class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	use bitfield;
@@ -19,9 +27,10 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	use logging_screen;
 	use logging_email;
 	use safe_paths;
+	use config;
 
 	const DefaultSendEmailsFrom = 'servers@moveforward.co.nz';
-	const DefaultSendEmailsTo = 'servers@moveforward.co.nz';
+	const DefaultSendEmailsTo   = 'servers@moveforward.co.nz';
 
 	const CurrentEnvironment = SS_ENVIRONMENT_TYPE;
 
@@ -57,6 +66,17 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	// what level will we trigger at
 	private $level;
 
+	// only send cookies for requests starting with this path on server
+	private static $debug_request_path;
+	// name of request variable (_GET) to trigger
+	private static $debug_request_param;
+	// value to check on request variable, if empty any truthish value will do, falsish will unset
+	private static $debug_request_value;
+	// name of cookie to set
+	private static $debug_cookie_name;
+	// cookie value to set
+	private static $debug_cookie_value;
+
 	public function __construct( $level = self::LevelFromEnv, $source = '' ) {
 		parent::__construct();
 		$this->init( $level, $source );
@@ -83,6 +103,60 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	}
 
 	/**
+	 * configure debug cookie depending on config and request variables
+	 *
+	 * @param string       $matchPath  to enable debugging for (request path, e.g. '/admin')
+	 * @param bool         $persistent wether to persist xdebug cookie across requests once set without needing the trigger parameter
+	 * @param string       $paramName  name of getvar to check if we should send cookie, if empty config variable will be used
+	 * @param array|string $envs       debug in these environments
+	 */
+	public static function xdebug( $matchPath = '/', $persistent = true, $paramName = '', $envs = [ 'dev' ] ) {
+		if ( extension_loaded( 'xdebug' ) ) {
+			$envs = is_array( $envs ) ? $envs : [ $envs ];
+
+			$config = static::config();
+
+			$cookieName = $config->get( 'debug_cookie_name' );
+
+			if ( $cookieName && in_array( Director::get_environment_type(), $envs ) ) {
+				$matchPath   = '/' . ltrim( $matchPath ?: $config->get( 'debug_request_path' ), '/' );
+				$requestPath = '/' . ltrim( @$_SERVER['REQUEST_URI'], '/' );
+
+				if ( static::match_path( $matchPath, $requestPath ) ) {
+
+					$paramName         = $paramName ?: $config->get( 'debug_request_param' );
+					$requireParamValue = $config->get( 'debug_request_value' );
+					$cookieValue       = $config->get( 'debug_cookie_value' );
+
+					if ( $cookieName && $cookieValue && $paramName ) {
+						$requestParamValue = array_key_exists( $paramName, $_GET )
+							? $_GET[ $paramName ]
+							: null;
+
+						if ( ! $requireParamValue || ( $requireParamValue && $requestParamValue == $requireParamValue ) ) {
+							// no particular value required but param passed, or value required and matches request
+							Cookie::set( $cookieName, $cookieValue, 1, $matchPath );
+							if ( $persistent ) {
+								Session::set( "MODULAR_DEBUG_$cookieName", $cookieValue );
+							}
+						} elseif ( ! $persistent || ( $requestParamValue && ( $requestParamValue != $requireParamValue ) ) ) {
+							// some other request value or no request value
+							Cookie::set( $cookieName, null );
+							if ( !$persistent && !$requestParamValue) {
+								Session::set( "MODULAR_DEBUG_$cookieName", null );
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	public static function match_path( $pattern, $value ) {
+		return ( $pattern && ( substr( $value, 0, strlen( $pattern ) ) == $pattern ) );
+	}
+
+	/**
 	 * Set levels and source and if flags indicate debugging to file screen or email initialise those aspects of debugging using defaults from config.
 	 *
 	 * @param        $level
@@ -95,14 +169,14 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * @throws \Zend_Log_Exception
 	 */
 	protected function init( $level, $source = null, $clearWriters = true ) {
-		if ($clearWriters) {
+		if ( $clearWriters ) {
 			$this->logger()->clearWriters();
 		}
 
 		$level = $this->level( $level )->level();
 		$this->source( $source ?: get_called_class() );
 
-		if ( method_exists($this, 'toFile') && $this->testbits( $level, self::DebugFile ) ) {
+		if ( method_exists( $this, 'toFile' ) && $this->testbits( $level, self::DebugFile ) ) {
 			$this->toFile( $level );
 		}
 		if ( method_exists( $this, 'toScreen' ) && $this->testbits( $level, self::DebugScreen ) ) {
@@ -146,15 +220,17 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 
 	/**
 	 * Setup level from passed level which may be to read from the environment.
+	 *
 	 * @inheritdoc
 	 */
-	public function level( $level = self::LevelFromEnv) {
+	public function level( $level = self::LevelFromEnv ) {
 		if ( func_num_args() ) {
-			if ( $this->testbits($level, self::LevelFromEnv )) {
+			if ( $this->testbits( $level, self::LevelFromEnv ) ) {
 				$this->level = $this->env();
 			} else {
 				$this->level = $level;
 			}
+
 			return $this;
 		} else {
 			return $this->level;
@@ -164,14 +240,16 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	/**
 	 * Set the source which will appear in output, also pushes the source onto
 	 * a stack so can be popSource'd later.
+	 *
 	 * @param string $source
 	 *
 	 * @return $this|string
 	 */
 	public function source( $source = null ) {
 		if ( func_num_args() ) {
-			array_push($this->sources, $this->source);
+			array_push( $this->sources, $this->source );
 			$this->source = $source;
+
 			return $this;
 		} else {
 			return $this->source;
@@ -180,10 +258,11 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 
 	/**
 	 * Pop back the last saved source, e.g. when exiting a method call where soource(__METHOD__) was called at the start.
+	 *
 	 * @return mixed
 	 */
 	public function popSource() {
-		return array_pop($this->sources);
+		return array_pop( $this->sources );
 	}
 
 	/**
@@ -312,8 +391,8 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	}
 
 	public function error( $message, $source = '', $tokens = [] ) {
-		if (\Director::isDev()) {
-			$this->fail($message, $source);
+		if ( \Director::isDev() ) {
+			$this->fail( $message, $source );
 		} else {
 			$this->log( $message, self::DebugErr, $source, $tokens );
 		}
@@ -330,7 +409,7 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 	 * @throws \Exception
 	 * @throws \Modular\Exceptions\Debug
 	 */
-	public function fail( $messageOrException, $source = '', $tokens = []) {
+	public function fail( $messageOrException, $source = '', $tokens = [] ) {
 		if ( $messageOrException instanceof \Exception ) {
 			$message = $messageOrException->getMessage();
 
@@ -361,15 +440,15 @@ class Debugger extends Object implements LoggerInterface, DebuggerInterface {
 		return set_error_handler(
 			function ( $errorCode, $errorMessage ) use ( &$message, &$code, $exception ) {
 				$exceptionClass = $exception ? get_class( $exception ) : \Exception::class;
-				$message = $errorMessage;
-				$code = $errorCode;
+				$message        = $errorMessage;
+				$code           = $errorCode;
 				throw new $exceptionClass( $message, $code, $exception ?: null );
 			}
 		);
 	}
 
 	public static function send_emails_to() {
-		return static::config()->get('send_emails_to') ?: Application::system_admin_email();
+		return static::config()->get( 'send_emails_to' ) ?: Application::system_admin_email();
 	}
 
 	public static function log_email() {
